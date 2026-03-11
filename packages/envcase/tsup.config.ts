@@ -1,19 +1,33 @@
 import { defineConfig } from 'tsup'
 
 export default defineConfig([
-  // Main library entry
+  // Core library — both ESM and CJS
   {
     entry: {
       index: 'src/index.ts',
-      'adapters/index': 'src/adapters/index.ts',
     },
     format: ['esm', 'cjs'],
     dts: true,
     clean: true,
     sourcemap: true,
     outDir: 'dist',
+    esbuildOptions(options, context) {
+      if (context.format === 'cjs') {
+        options.define = { ...options.define, 'import.meta.env': 'undefined' }
+      }
+    },
   },
-  // CLI entry (ESM only, executable)
+  // Adapters — ESM only (Vite adapter uses import.meta)
+  {
+    entry: {
+      'adapters/index': 'src/adapters/index.ts',
+    },
+    format: ['esm'],
+    dts: true,
+    sourcemap: true,
+    outDir: 'dist',
+  },
+  // CLI — ESM only, executable
   {
     entry: {
       'cli/index': 'src/cli/index.ts',

@@ -10,7 +10,4 @@
     "declarationMap": true,
     "sourceMap": true
   },
-  "references": [
-    { "path": "./packages/envcase" }
-  ]
 }

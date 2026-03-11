@@ -1,4 +1,12 @@
 /**
+ * Returns `import.meta.env` if available, otherwise `undefined`.
+ * Kept in this ESM-only file so CJS builds never see `import.meta`.
+ */
+export function viteEnvIfAvailable(): Record<string, string | undefined> | undefined {
+  return (import.meta as { env?: Record<string, string | undefined> }).env
+}
+
+/**
  * Adapter that reads environment variables from `import.meta.env`.
  * Use this in Vite-based projects (React, Vue, Svelte, etc.).
  *
@@ -18,9 +26,10 @@
  * ```
  */
 export function viteAdapter(
-  env: Record<string, string | undefined> = (import.meta as { env?: Record<string, string | undefined> }).env as Record<string, string | undefined>
+  env?: Record<string, string | undefined>
 ): Record<string, string | undefined> {
-  if (!env) {
+  const resolved = env !== undefined ? env : viteEnvIfAvailable()
+  if (!resolved) {
     throw new Error(
       '[envcase] viteAdapter() requires import.meta.env. ' +
         'Use this adapter only in Vite-based projects (vite dev / vite build). ' +
@@ -28,5 +37,5 @@ export function viteAdapter(
     )
   }
 
-  return env
+  return resolved
 }

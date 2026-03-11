@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { EnvCaseError, type FieldError } from './errors.js'
 import { nodeAdapter } from './adapters/node.js'
-import { viteAdapter } from './adapters/vite.js'
+import { viteAdapter, viteEnvIfAvailable } from './adapters/vite.js'
 import { denoAdapter } from './adapters/deno.js'
 
 /**
@@ -104,9 +104,9 @@ function resolveSource(options?: DefineEnvOptions): Record<string, string | unde
   // Auto-detect runtime: Deno → Vite → Node
   const g = globalThis as { Deno?: { env: { toObject(): Record<string, string> } } }
   if (typeof g.Deno !== 'undefined') return denoAdapter()
-  if ((import.meta as { env?: unknown }).env) return viteAdapter()
+  const viteEnv = viteEnvIfAvailable()
+  if (viteEnv) return viteAdapter(viteEnv)
 
-  // adapter: 'node' or final fallback
   return nodeAdapter()
 }
 
