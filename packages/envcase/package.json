@@ -3,6 +3,30 @@
   "version": "0.1.0",
   "description": "Type-safe, framework-agnostic environment variable validation with Zod",
   "license": "MIT",
+  "author": "Vasilis <vasilissavv@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Arigatos/envcase.git",
+    "directory": "packages/envcase"
+  },
+  "homepage": "https://github.com/Arigatos/envcase#readme",
+  "bugs": {
+    "url": "https://github.com/Arigatos/envcase/issues"
+  },
+  "keywords": [
+    "env",
+    "environment",
+    "environment-variables",
+    "validation",
+    "zod",
+    "typescript",
+    "type-safe",
+    "dotenv",
+    "config",
+    "vite",
+    "deno",
+    "node"
+  ],
   "type": "module",
   "exports": {
     ".": {
@@ -18,7 +42,9 @@
     "envcase": "./dist/cli/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "README.md"
   ],
   "scripts": {
     "build": "tsup",
