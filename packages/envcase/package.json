@@ -6,7 +6,7 @@
   "author": "Vasilis <vasilissavv@gmail.com>",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Arigatos/envcase.git",
+    "url": "git+https://github.com/Arigatos/envcase.git",
     "directory": "packages/envcase"
   },
   "homepage": "https://github.com/Arigatos/envcase#readme",
@@ -39,7 +39,7 @@
     }
   },
   "bin": {
-    "envcase": "./dist/cli/index.js"
+    "envcase": "dist/cli/index.js"
   },
   "files": [
     "dist",
