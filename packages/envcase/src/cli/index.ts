@@ -25,40 +25,43 @@ function parseArgs(argv: string[]): Record<string, string> {
   return result
 }
 
+async function loadSchema(schemaPath: string): Promise<Record<string, import('zod').ZodTypeAny>> {
+  let mod: Record<string, unknown>
+  try {
+    mod = (await import(/* @vite-ignore */ `${process.cwd()}/${schemaPath}`)) as Record<
+      string,
+      unknown
+    >
+  } catch (_err) {
+    console.error(
+      `[envcase] Could not import schema file: ${schemaPath}\n` +
+        `  Make sure the file exists and exports a "schema" object.\n` +
+        `  Example: export const schema = { PORT: z.coerce.number() }`
+    )
+    process.exit(1)
+  }
+
+  const schema = mod['schema'] as Record<string, import('zod').ZodTypeAny> | undefined
+  if (schema == null || typeof schema !== 'object') {
+    console.error(
+      `[envcase] No "schema" export found in ${schemaPath}.\n` +
+        `  Export your raw Zod schema object:\n` +
+        `  export const schema = { PORT: z.coerce.number(), ... }\n` +
+        `  export const env = defineEnv(schema)`
+    )
+    process.exit(1)
+  }
+
+  return schema
+}
+
 async function main(): Promise<void> {
   switch (command) {
     case 'generate': {
       const flags = parseArgs(args)
       const schemaPath = flags['schema'] ?? 'src/env.ts'
       const outputPath = flags['output'] ?? '.env.example'
-
-      // Dynamically import the user's schema file and look for a `schema` export
-      let mod: Record<string, unknown>
-      try {
-        mod = (await import(/* @vite-ignore */ `${process.cwd()}/${schemaPath}`)) as Record<
-          string,
-          unknown
-        >
-      } catch (err) {
-        console.error(
-          `[envcase] Could not import schema file: ${schemaPath}\n` +
-            `  Make sure the file exists and exports a "schema" object.\n` +
-            `  Example: export const schema = { PORT: z.coerce.number() }`
-        )
-        process.exit(1)
-      }
-
-      const schema = mod['schema'] as Record<string, import('zod').ZodTypeAny> | undefined
-      if (schema == null || typeof schema !== 'object') {
-        console.error(
-          `[envcase] No "schema" export found in ${schemaPath}.\n` +
-            `  Export your raw Zod schema object:\n` +
-            `  export const schema = { PORT: z.coerce.number(), ... }\n` +
-            `  export const env = defineEnv(schema)`
-        )
-        process.exit(1)
-      }
-
+      const schema = await loadSchema(schemaPath)
       await runGenerate({ schema, outputPath })
       break
     }
@@ -67,31 +70,7 @@ async function main(): Promise<void> {
       const flags = parseArgs(args)
       const schemaPath = flags['schema'] ?? 'src/env.ts'
       const envPath = flags['env'] ?? '.env'
-
-      let mod: Record<string, unknown>
-      try {
-        mod = (await import(/* @vite-ignore */ `${process.cwd()}/${schemaPath}`)) as Record<
-          string,
-          unknown
-        >
-      } catch {
-        console.error(
-          `[envcase] Could not import schema file: ${schemaPath}\n` +
-            `  Make sure the file exists and exports a "schema" object.`
-        )
-        process.exit(1)
-      }
-
-      const schema = mod['schema'] as Record<string, import('zod').ZodTypeAny> | undefined
-      if (schema == null || typeof schema !== 'object') {
-        console.error(
-          `[envcase] No "schema" export found in ${schemaPath}.\n` +
-            `  Export your raw Zod schema object:\n` +
-            `  export const schema = { PORT: z.coerce.number(), ... }`
-        )
-        process.exit(1)
-      }
-
+      const schema = await loadSchema(schemaPath)
       const result = await runCheck({ schema, envPath })
       console.log(formatCheckResult(result))
       if (!result.valid) process.exit(1)
