@@ -51,7 +51,7 @@ pnpm add envcase zod
 yarn add envcase zod
 ```
 
-> Zod is a peer dependency. You control the version.
+> Zod is a peer dependency. You control the version. **Zod v3 only** — Zod v4 support is planned for a future release.
 
 ---
 
@@ -492,16 +492,12 @@ export const clientEnv = defineEnv(schema, { prefix: 'NEXT_PUBLIC_' })
 
 ## Why envcase?
 
-| Package | Types | Zod-native | CLI tooling | Adapters | Framework-agnostic |
-|---------|:-----:|:----------:|:-----------:|:--------:|:-----------------:|
-| `dotenv` | ❌ | ❌ | ❌ | ❌ | ✅ |
-| `t3-env` | ✅ | ✅ | ❌ | ❌ | ❌ Next.js only |
-| `envsafe` | ✅ | ❌ custom | ❌ | ❌ | ✅ |
-| `env-var` | ✅ | ❌ | ❌ | ❌ | ✅ |
-| `envalid` | ✅ | ❌ | ❌ | ❌ | ✅ |
-| **`envcase`** | ✅ | ✅ | ✅ | ✅ Node/Vite/Deno | ✅ |
-
-**The unique combination:** Zod-native validation · human-readable errors · runtime adapters for Node.js, Vite, and Deno · CLI tooling for team workflows.
+- **Zod-native** — use the same schema library you already know
+- **Type-safe** — fully inferred types, no manual typing needed
+- **Fail fast** — crashes at startup with a clear error, not buried in runtime
+- **Runtime adapters** — works with Node.js, Vite, and Deno out of the box
+- **CLI tooling** — `generate`, `check`, `diff` for team workflows
+- **Framework-agnostic** — Express, Fastify, Next.js, SvelteKit, anything
 
 ---
 
