@@ -43,10 +43,12 @@ export interface DefineEnvOptions {
   onError?: 'throw' | 'warn' | 'silent'
 }
 
+function isMissingIssue(issue: z.ZodIssue): boolean {
+  return issue.code === 'invalid_type' && issue.received === 'undefined'
+}
+
 function humanizeZodIssue(issue: z.ZodIssue): string {
-  if (issue.code === 'invalid_type' && issue.received === 'undefined') {
-    return 'Required but missing'
-  }
+  if (isMissingIssue(issue)) return 'Required but missing'
   if (issue.code === 'invalid_type') {
     return `Expected ${issue.expected}, got "${issue.received}"`
   }
@@ -57,20 +59,54 @@ function humanizeZodIssue(issue: z.ZodIssue): string {
 }
 
 /**
+ * Extract a .env-style value hint from a Zod schema.
+ * e.g. ZodEnum → "development|staging|production"
+ * Unwraps ZodDefault / ZodOptional to reach the inner type.
+ */
+function extractEnvHint(validator: z.ZodTypeAny): string | undefined {
+  const def = validator._def as Record<string, unknown>
+  if (def['typeName'] === z.ZodFirstPartyTypeKind.ZodEnum) {
+    return (def['values'] as string[]).join('|')
+  }
+  const inner = (def['innerType'] ?? def['schema']) as z.ZodTypeAny | undefined
+  return inner != null ? extractEnvHint(inner) : undefined
+}
+
+/**
  * Define and validate environment variables against a Zod schema.
  * Returns a fully-typed, frozen object containing the parsed values.
  *
  * @param schema - Record of Zod validators keyed by env var name.
  * @param options - Optional configuration (adapter, prefix, onError, etc.).
  */
+function resolveSource(options?: DefineEnvOptions): Record<string, string | undefined> {
+  const { adapter, source } = options ?? {}
+
+  if (adapter === 'custom') {
+    if (source == null) {
+      throw new Error(
+        '[envcase] adapter: "custom" requires a source object. ' +
+          'Pass { adapter: "custom", source: { MY_VAR: "value", ... } }.'
+      )
+    }
+    return source
+  }
+
+  // source alone (without adapter: 'custom') is a convenience shorthand
+  if (source != null) return source
+
+  // adapter: 'node' or auto-detect — both use nodeAdapter for v0.1.0
+  return nodeAdapter()
+}
+
 export function defineEnv<T extends Record<string, z.ZodTypeAny>>(
   schema: T,
   options?: DefineEnvOptions
 ): InferEnv<T> {
-  const { source, prefix, onError = 'throw' } = options ?? {}
+  const { prefix, onError = 'throw' } = options ?? {}
 
   // Resolve env source
-  const raw: Record<string, string | undefined> = source ?? nodeAdapter()
+  const raw = resolveSource(options)
 
   // Build input object, stripping prefix from source keys when set
   const input: Record<string, string | undefined> = {}
@@ -92,7 +128,13 @@ export function defineEnv<T extends Record<string, z.ZodTypeAny>>(
       parsed[key] = result.data
     } else {
       const firstIssue = result.error.issues[0]
-      fieldErrors.push({ key, message: humanizeZodIssue(firstIssue) })
+      const missing = isMissingIssue(firstIssue)
+      fieldErrors.push({
+        key,
+        message: humanizeZodIssue(firstIssue),
+        kind: missing ? 'missing' : 'invalid',
+        envHint: missing ? extractEnvHint(validator) : undefined,
+      })
     }
   }
 

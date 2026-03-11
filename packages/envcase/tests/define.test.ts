@@ -1,9 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { z } from 'zod'
 import { defineEnv } from '../src/index.js'
 import { EnvCaseError } from '../src/errors.js'
 
-describe('defineEnv', () => {
+// ── core validation ────────────────────────────────────────────────────────
+
+describe('defineEnv — core validation', () => {
   it('returns typed values from valid input', () => {
     const env = defineEnv(
       { DATABASE_URL: z.string().url(), PORT: z.coerce.number() },
@@ -28,49 +30,26 @@ describe('defineEnv', () => {
     ).toThrow(EnvCaseError)
   })
 
+  it('collects all failing fields into a single error', () => {
+    let err!: EnvCaseError
+    try {
+      defineEnv(
+        { A: z.string(), B: z.string(), C: z.string() },
+        { source: {} }
+      )
+    } catch (e) {
+      err = e as EnvCaseError
+    }
+    expect(err.fields).toHaveLength(3)
+    expect(err.fields.map((f) => f.key)).toEqual(['A', 'B', 'C'])
+  })
+
   it('applies default values correctly', () => {
     const env = defineEnv(
       { PORT: z.coerce.number().default(3000) },
       { source: {} }
     )
     expect(env.PORT).toBe(3000)
-  })
-
-  it('coerces numbers from strings', () => {
-    const env = defineEnv(
-      { PORT: z.coerce.number() },
-      { source: { PORT: '8080' } }
-    )
-    expect(env.PORT).toBe(8080)
-    expect(typeof env.PORT).toBe('number')
-  })
-
-  it('coerces booleans from strings — true values', () => {
-    const envTrue = defineEnv(
-      { FLAG: z.coerce.boolean() },
-      { source: { FLAG: 'true' } }
-    )
-    expect(envTrue.FLAG).toBe(true)
-
-    const envOne = defineEnv(
-      { FLAG: z.coerce.boolean() },
-      { source: { FLAG: '1' } }
-    )
-    expect(envOne.FLAG).toBe(true)
-  })
-
-  it('coerces booleans from strings — false values', () => {
-    const envFalse = defineEnv(
-      { FLAG: z.coerce.boolean() },
-      { source: { FLAG: 'false' } }
-    )
-    expect(envFalse.FLAG).toBe(false)
-
-    const envZero = defineEnv(
-      { FLAG: z.coerce.boolean() },
-      { source: { FLAG: '0' } }
-    )
-    expect(envZero.FLAG).toBe(false)
   })
 
   it('handles optional fields without throwing', () => {
@@ -81,35 +60,95 @@ describe('defineEnv', () => {
     expect(env.SENTRY_DSN).toBeUndefined()
   })
 
-  it('respects onError: warn — logs but does not throw', () => {
-    const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    let result: unknown
-    expect(() => {
-      result = defineEnv(
-        { DATABASE_URL: z.string().url() },
-        { source: {}, onError: 'warn' }
-      )
-    }).not.toThrow()
-    expect(consoleSpy).toHaveBeenCalled()
-    const warnArg: string = consoleSpy.mock.calls[0][0] as string
-    expect(warnArg).toContain('[envcase]')
-    expect(result).toBeDefined()
-    consoleSpy.mockRestore()
+  it('returns a frozen object', () => {
+    const env = defineEnv({ PORT: z.coerce.number() }, { source: { PORT: '3000' } })
+    expect(Object.isFrozen(env)).toBe(true)
+  })
+})
+
+// ── coercion ───────────────────────────────────────────────────────────────
+
+describe('defineEnv — coercion', () => {
+  it('coerces numbers from strings', () => {
+    const env = defineEnv({ PORT: z.coerce.number() }, { source: { PORT: '8080' } })
+    expect(env.PORT).toBe(8080)
+    expect(typeof env.PORT).toBe('number')
   })
 
-  it('respects onError: silent — suppresses all output', () => {
-    const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    expect(() => {
-      defineEnv(
-        { DATABASE_URL: z.string().url() },
-        { source: {}, onError: 'silent' }
-      )
-    }).not.toThrow()
-    expect(consoleSpy).not.toHaveBeenCalled()
-    consoleSpy.mockRestore()
+  it('coerces boolean "true" and "1" to true', () => {
+    for (const val of ['true', '1']) {
+      const env = defineEnv({ FLAG: z.coerce.boolean() }, { source: { FLAG: val } })
+      expect(env.FLAG).toBe(true)
+    }
   })
 
-  it('strips key prefix when prefix option is set', () => {
+  it('coerces boolean "false" and "0" to false', () => {
+    for (const val of ['false', '0']) {
+      const env = defineEnv({ FLAG: z.coerce.boolean() }, { source: { FLAG: val } })
+      expect(env.FLAG).toBe(false)
+    }
+  })
+
+  it('coerces booleans wrapped in .default()', () => {
+    const env = defineEnv(
+      { FLAG: z.coerce.boolean().default(false) },
+      { source: { FLAG: 'true' } }
+    )
+    expect(env.FLAG).toBe(true)
+  })
+
+  it('coerces booleans wrapped in .optional()', () => {
+    const env = defineEnv(
+      { FLAG: z.coerce.boolean().optional() },
+      { source: { FLAG: 'false' } }
+    )
+    expect(env.FLAG).toBe(false)
+  })
+})
+
+// ── onError ────────────────────────────────────────────────────────────────
+
+describe('defineEnv — onError option', () => {
+  it('throws by default when validation fails', () => {
+    expect(() =>
+      defineEnv({ X: z.string() }, { source: {} })
+    ).toThrow(EnvCaseError)
+  })
+
+  it('onError: warn — logs the error message but does not throw', () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(() =>
+      defineEnv({ X: z.string() }, { source: {}, onError: 'warn' })
+    ).not.toThrow()
+    expect(spy).toHaveBeenCalledOnce()
+    expect(spy.mock.calls[0][0]).toContain('[envcase]')
+    spy.mockRestore()
+  })
+
+  it('onError: warn — returns a partial object when validation fails', () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const env = defineEnv(
+      { PORT: z.coerce.number().default(3000), MISSING: z.string() },
+      { source: {}, onError: 'warn' }
+    )
+    expect(env.PORT).toBe(3000)
+    spy.mockRestore()
+  })
+
+  it('onError: silent — does not throw and does not log', () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(() =>
+      defineEnv({ X: z.string() }, { source: {}, onError: 'silent' })
+    ).not.toThrow()
+    expect(spy).not.toHaveBeenCalled()
+    spy.mockRestore()
+  })
+})
+
+// ── prefix ─────────────────────────────────────────────────────────────────
+
+describe('defineEnv — prefix option', () => {
+  it('strips prefix when reading from source', () => {
     const env = defineEnv(
       { PORT: z.coerce.number(), HOST: z.string() },
       { source: { VITE_PORT: '4000', VITE_HOST: 'localhost' }, prefix: 'VITE_' }
@@ -118,7 +157,102 @@ describe('defineEnv', () => {
     expect(env.HOST).toBe('localhost')
   })
 
-  it('error message lists all failing vars', () => {
+  it('does not find prefixed keys when prefix is not set', () => {
+    expect(() =>
+      defineEnv(
+        { PORT: z.coerce.number() },
+        { source: { VITE_PORT: '4000' } }
+      )
+    ).toThrow(EnvCaseError)
+  })
+})
+
+// ── adapter option ─────────────────────────────────────────────────────────
+
+describe('defineEnv — adapter option', () => {
+  it('adapter: "node" reads from process.env', () => {
+    process.env.ENVCASE_NODE_ADAPTER_TEST = '7777'
+    const env = defineEnv(
+      { ENVCASE_NODE_ADAPTER_TEST: z.coerce.number() },
+      { adapter: 'node' }
+    )
+    expect(env.ENVCASE_NODE_ADAPTER_TEST).toBe(7777)
+    delete process.env.ENVCASE_NODE_ADAPTER_TEST
+  })
+
+  it('adapter: "custom" with source uses that source', () => {
+    const env = defineEnv(
+      { API_KEY: z.string() },
+      { adapter: 'custom', source: { API_KEY: 'from-custom' } }
+    )
+    expect(env.API_KEY).toBe('from-custom')
+  })
+
+  it('adapter: "custom" without source throws a configuration error', () => {
+    expect(() =>
+      defineEnv({ API_KEY: z.string() }, { adapter: 'custom' })
+    ).toThrowError(/source.*required|custom.*source/i)
+  })
+})
+
+// ── auto-detect ────────────────────────────────────────────────────────────
+
+describe('defineEnv — auto-detect adapter', () => {
+  it('falls back to nodeAdapter and reads process.env when no options given', () => {
+    process.env.ENVCASE_AUTO_DETECT = 'auto'
+    const env = defineEnv({ ENVCASE_AUTO_DETECT: z.string() })
+    expect(env.ENVCASE_AUTO_DETECT).toBe('auto')
+    delete process.env.ENVCASE_AUTO_DETECT
+  })
+})
+
+// ── error fields integration ───────────────────────────────────────────────
+
+describe('defineEnv — EnvCaseError.fields integration', () => {
+  it('field.kind is "missing" for a required var that is absent', () => {
+    let err!: EnvCaseError
+    try {
+      defineEnv({ DATABASE_URL: z.string().url() }, { source: {} })
+    } catch (e) {
+      err = e as EnvCaseError
+    }
+    expect(err.fields[0].kind).toBe('missing')
+  })
+
+  it('field.kind is "invalid" for a var with the wrong value', () => {
+    let err!: EnvCaseError
+    try {
+      defineEnv({ PORT: z.coerce.number().int() }, { source: { PORT: 'abc' } })
+    } catch (e) {
+      err = e as EnvCaseError
+    }
+    expect(err.fields[0].kind).toBe('invalid')
+  })
+
+  it('field.envHint contains pipe-separated enum options for a missing z.enum var', () => {
+    let err!: EnvCaseError
+    try {
+      defineEnv(
+        { NODE_ENV: z.enum(['development', 'staging', 'production']) },
+        { source: {} }
+      )
+    } catch (e) {
+      err = e as EnvCaseError
+    }
+    expect(err.fields[0].envHint).toBe('development|staging|production')
+  })
+
+  it('field.envHint is undefined for a missing plain string var', () => {
+    let err!: EnvCaseError
+    try {
+      defineEnv({ SECRET: z.string() }, { source: {} })
+    } catch (e) {
+      err = e as EnvCaseError
+    }
+    expect(err.fields[0].envHint).toBeUndefined()
+  })
+
+  it('error message lists all failing var names', () => {
     let message = ''
     try {
       defineEnv(
