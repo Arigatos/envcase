@@ -165,6 +165,48 @@ describe('defineEnv — prefix option', () => {
       )
     ).toThrow(EnvCaseError)
   })
+
+  it('strips prefix from process.env keys when adapter is "node"', () => {
+    process.env.NEXT_PUBLIC_API_URL = 'https://api.example.com'
+    const env = defineEnv(
+      { API_URL: z.string().url() },
+      { adapter: 'node', prefix: 'NEXT_PUBLIC_' }
+    )
+    expect(env.API_URL).toBe('https://api.example.com')
+    delete process.env.NEXT_PUBLIC_API_URL
+  })
+
+  it('error field keys use schema key names, not the prefixed source key names', () => {
+    let err!: EnvCaseError
+    try {
+      defineEnv(
+        { PORT: z.coerce.number(), HOST: z.string() },
+        { source: {}, prefix: 'VITE_' }
+      )
+    } catch (e) {
+      err = e as EnvCaseError
+    }
+    expect(err.fields.map((f) => f.key)).toEqual(['PORT', 'HOST'])
+    expect(err.message).toContain('PORT')
+    expect(err.message).not.toContain('VITE_PORT')
+  })
+
+  it('empty-string prefix is treated as no prefix', () => {
+    const env = defineEnv(
+      { API_KEY: z.string() },
+      { source: { API_KEY: 'secret' }, prefix: '' }
+    )
+    expect(env.API_KEY).toBe('secret')
+  })
+
+  it('boolean coercion works correctly through prefix stripping', () => {
+    const env = defineEnv(
+      { DEBUG: z.coerce.boolean(), CACHE: z.coerce.boolean() },
+      { source: { APP_DEBUG: 'false', APP_CACHE: '1' }, prefix: 'APP_' }
+    )
+    expect(env.DEBUG).toBe(false)
+    expect(env.CACHE).toBe(true)
+  })
 })
 
 // ── adapter option ─────────────────────────────────────────────────────────
@@ -197,10 +239,10 @@ describe('defineEnv — adapter option', () => {
 
 // ── auto-detect ────────────────────────────────────────────────────────────
 
-describe('defineEnv — auto-detect adapter', () => {
-  it('falls back to nodeAdapter and reads process.env when no options given', () => {
+describe('defineEnv — explicit adapter: "node"', () => {
+  it('reads process.env with explicit adapter: "node"', () => {
     process.env.ENVCASE_AUTO_DETECT = 'auto'
-    const env = defineEnv({ ENVCASE_AUTO_DETECT: z.string() })
+    const env = defineEnv({ ENVCASE_AUTO_DETECT: z.string() }, { adapter: 'node' })
     expect(env.ENVCASE_AUTO_DETECT).toBe('auto')
     delete process.env.ENVCASE_AUTO_DETECT
   })

@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { EnvCaseError, type FieldError } from './errors.js'
 import { nodeAdapter } from './adapters/node.js'
+import { viteAdapter } from './adapters/vite.js'
+import { denoAdapter } from './adapters/deno.js'
 
 /**
  * Detect whether a Zod type (including wrapped types like Default/Optional)
@@ -92,10 +94,19 @@ function resolveSource(options?: DefineEnvOptions): Record<string, string | unde
     return source
   }
 
+  if (adapter === 'node') return nodeAdapter()
+  if (adapter === 'vite') return viteAdapter()
+  if (adapter === 'deno') return denoAdapter()
+
   // source alone (without adapter: 'custom') is a convenience shorthand
   if (source != null) return source
 
-  // adapter: 'node' or auto-detect — both use nodeAdapter for v0.1.0
+  // Auto-detect runtime: Deno → Vite → Node
+  const g = globalThis as { Deno?: { env: { toObject(): Record<string, string> } } }
+  if (typeof g.Deno !== 'undefined') return denoAdapter()
+  if ((import.meta as { env?: unknown }).env) return viteAdapter()
+
+  // adapter: 'node' or final fallback
   return nodeAdapter()
 }
 
