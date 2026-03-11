@@ -94,7 +94,8 @@ export async function runCheck(options: RunCheckOptions): Promise<CheckResult> {
   try {
     const content = await readFile(envPath, 'utf8')
     source = parseEnvFile(content)
-  } catch {
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
     // File doesn't exist — validate against empty source so defaults still pass
   }
 

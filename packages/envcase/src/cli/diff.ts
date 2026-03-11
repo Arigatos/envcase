@@ -120,14 +120,16 @@ export async function runDiff(options?: RunDiffOptions): Promise<DiffResult> {
   let exampleContent = ''
   try {
     exampleContent = await readFile(examplePath, 'utf8')
-  } catch {
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
     // .env.example doesn't exist — nothing to diff against
   }
 
   let envContent = ''
   try {
     envContent = await readFile(envPath, 'utf8')
-  } catch {
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
     // .env doesn't exist — all example entries will be "missing"
   }
 
