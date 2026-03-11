@@ -1,0 +1,23 @@
+{
+  "name": "example-node-express",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Example: envcase in an Express / Node.js app",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "envcase": "workspace:*",
+    "express": "^4.19.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0"
+  }
+}

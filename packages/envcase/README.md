@@ -57,29 +57,22 @@ yarn add envcase zod
 
 ## Basic Usage
 
-Create an `env.ts` file at the root of your project and import it everywhere instead of `process.env`:
+Create an `env.ts` file and import it everywhere instead of `process.env`:
 
 ```ts
 // src/env.ts
 import { defineEnv } from 'envcase'
 import { z } from 'zod'
 
-export const env = defineEnv({
-  // String — required
+export const schema = {
   DATABASE_URL: z.string().url(),
-
-  // Number — auto-coerced from string, with default
-  PORT: z.coerce.number().default(3000),
-
-  // Enum
-  NODE_ENV: z.enum(['development', 'staging', 'production']),
-
-  // Optional
-  SENTRY_DSN: z.string().url().optional(),
-
-  // Boolean — auto-coerced from "true"/"false"/"1"/"0"
+  PORT:         z.coerce.number().default(3000),
+  NODE_ENV:     z.enum(['development', 'staging', 'production']),
+  SENTRY_DSN:   z.string().url().optional(),
   ENABLE_CACHE: z.coerce.boolean().default(false),
-})
+}
+
+export const env = defineEnv(schema)
 ```
 
 ```ts
@@ -90,6 +83,8 @@ app.listen(env.PORT, () => {
   console.log(`Server running in ${env.NODE_ENV} mode`)
 })
 ```
+
+> **Tip:** Export `schema` separately from `env`. The CLI commands (`envcase generate`, `envcase check`) import your schema file directly — if `defineEnv` throws during import because a variable is missing, the CLI can't read it.
 
 ---
 
@@ -125,9 +120,9 @@ defineEnv({
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `adapter` | `'node' \| 'custom'` | auto-detect | Which env source to use |
-| `source` | `Record<string, string \| undefined>` | — | Custom env object (use with `adapter: 'custom'`) |
-| `prefix` | `string` | — | Strip a prefix from source keys before matching schema |
+| `adapter` | `'node' \| 'vite' \| 'deno' \| 'custom'` | auto-detect | Which env source to use |
+| `source` | `Record<string, string \| undefined>` | — | Custom env object. Use with `adapter: 'custom'` or alone as a shorthand |
+| `prefix` | `string` | — | Strip a prefix from source keys before matching schema (e.g. `'VITE_'`, `'NEXT_PUBLIC_'`) |
 | `onError` | `'throw' \| 'warn' \| 'silent'` | `'throw'` | Behaviour when validation fails |
 
 #### Type inference
@@ -160,27 +155,77 @@ All environment variables are strings at runtime. `envcase` uses Zod's coercion 
 | `z.coerce.boolean()` | `"false"` | `false` |
 | `z.coerce.boolean()` | `"0"` | `false` |
 
-> **Note:** Zod's built-in `Boolean()` coercion treats `"false"` as `true` (non-empty string). `envcase` pre-processes boolean fields correctly so `"false"` and `"0"` become `false`.
+> **Note:** Zod's built-in `Boolean()` coercion treats `"false"` as `true` (any non-empty string). `envcase` pre-processes boolean fields so `"false"` and `"0"` correctly become `false`.
 
 ---
 
 ## Adapters
 
-Adapters tell `envcase` where to read variables from.
+Adapters tell `envcase` where to read variables from. By default, `envcase` auto-detects the runtime.
 
-### Node.js (default)
+### Auto-detect
 
-In a Node.js environment, `envcase` reads from `process.env` automatically — no configuration needed:
+When no `adapter` is specified, `envcase` picks the right source automatically:
+
+1. **Deno** — if `globalThis.Deno` is defined, uses `Deno.env`
+2. **Vite** — if `import.meta.env` is available, uses that
+3. **Node.js** — fallback, reads `process.env`
 
 ```ts
-export const env = defineEnv({ PORT: z.coerce.number() })
-// Reads process.env.PORT
+// No adapter needed — envcase figures it out
+export const env = defineEnv(schema)
 ```
 
-You can also be explicit:
+### Node.js
+
+Reads from `process.env`. The default in Node.js environments.
 
 ```ts
+export const env = defineEnv(schema)
+// or explicitly:
 export const env = defineEnv(schema, { adapter: 'node' })
+```
+
+### Vite
+
+Reads from `import.meta.env`. Use in Vite-based projects (React, Vue, Svelte, etc.).
+
+Vite requires public variables to be prefixed with `VITE_`. Use the `prefix` option so your schema keys stay clean:
+
+```ts
+// .env file:        VITE_API_URL=https://api.example.com
+// Schema key:       API_URL
+// Accessed as:      env.API_URL
+
+export const env = defineEnv(
+  { API_URL: z.string().url(), DEBUG: z.coerce.boolean().default(false) },
+  { adapter: 'vite', prefix: 'VITE_' }
+)
+```
+
+You can also import and use the adapter directly for testing:
+
+```ts
+import { viteAdapter } from 'envcase/adapters'
+
+// Inject a plain object instead of reading import.meta.env
+const result = viteAdapter({ VITE_API_URL: 'https://api.example.com' })
+```
+
+### Deno
+
+Reads from `Deno.env.toObject()`. Use in Deno runtimes.
+
+```ts
+export const env = defineEnv(schema, { adapter: 'deno' })
+```
+
+For testing, inject a plain object:
+
+```ts
+import { denoAdapter } from 'envcase/adapters'
+
+const result = denoAdapter({ PORT: '8000', DATABASE_URL: 'postgres://...' })
 ```
 
 ### Custom source
@@ -192,23 +237,30 @@ export const env = defineEnv(schema, {
   adapter: 'custom',
   source: { PORT: '3000', DATABASE_URL: 'https://...' },
 })
+
+// source alone (without adapter: 'custom') is a shorthand:
+export const env = defineEnv(schema, {
+  source: { PORT: '3000', DATABASE_URL: 'https://...' },
+})
 ```
 
 ### Prefix stripping
 
-Strip a prefix from source keys before matching against your schema. Useful for frameworks that namespace env vars:
+Strip a prefix from source keys before matching against your schema. Works with any adapter:
 
 ```ts
-// Source has: VITE_PORT, VITE_HOST
-// Schema has: PORT, HOST
-
-export const env = defineEnv(
-  { PORT: z.coerce.number(), HOST: z.string() },
-  { prefix: 'VITE_', source: import.meta.env }
+// NEXT_PUBLIC_ prefix (Next.js)
+export const clientEnv = defineEnv(
+  { APP_URL: z.string().url(), ENABLE_ANALYTICS: z.coerce.boolean().default(false) },
+  { prefix: 'NEXT_PUBLIC_' }
 )
+// Reads NEXT_PUBLIC_APP_URL → env.APP_URL
 
-env.PORT // reads VITE_PORT → number
-env.HOST // reads VITE_HOST → string
+// VITE_ prefix
+export const env = defineEnv(schema, { adapter: 'vite', prefix: 'VITE_' })
+
+// Custom prefix
+export const env = defineEnv(schema, { prefix: 'APP_', source: mySource })
 ```
 
 ### `onError` option
@@ -219,7 +271,7 @@ Control what happens when validation fails:
 // 'throw' (default) — crashes the process with a clear error
 defineEnv(schema, { onError: 'throw' })
 
-// 'warn' — logs the error, returns partial result
+// 'warn' — logs the error to console.warn, returns partial result
 defineEnv(schema, { onError: 'warn' })
 
 // 'silent' — suppresses all output, returns partial result
@@ -232,7 +284,7 @@ defineEnv(schema, { onError: 'silent' })
 
 ## Error Messages
 
-This is a key differentiator. When validation fails, `envcase` throws an `EnvCaseError` with a human-readable message that tells you exactly what to fix.
+When validation fails, `envcase` throws an `EnvCaseError` with a human-readable message that tells you exactly what to fix.
 
 ### Missing variables
 
@@ -280,15 +332,93 @@ try {
 
 ---
 
+## CLI
+
+Three commands cover the full env workflow. No config file needed — point them at your schema.
+
+### `npx envcase generate`
+
+Reads your schema and writes a `.env.example` file with type annotations and default values:
+
+```bash
+npx envcase generate
+npx envcase generate --schema src/env.ts --output .env.example
+```
+
+```
+[envcase] ✅ Generated .env.example
+```
+
+Generated `.env.example`:
+```
+DATABASE_URL=  # string (url) — required
+PORT=3000  # number — default: 3000
+NODE_ENV=  # "development" | "staging" | "production" — required
+SENTRY_DSN=  # string (url) — optional
+ENABLE_CACHE=false  # boolean — default: false
+```
+
+### `npx envcase check`
+
+Validates your `.env` file against your schema without starting the app. Exits 0 on success, 1 on failure.
+
+```bash
+npx envcase check
+npx envcase check --schema src/env.ts --env .env
+```
+
+```
+[envcase] ✅ All environment variables are valid.
+
+# or on failure:
+[envcase] ❌ Validation failed:
+  NODE_ENV → Expected "development" | "staging" | "production", got "prod"
+```
+
+### `npx envcase diff`
+
+Compares your `.env` against `.env.example` and reports what's missing. Exits 0 if nothing is missing, 1 otherwise.
+
+```bash
+npx envcase diff
+npx envcase diff --example .env.example --env .env
+```
+
+```
+[envcase] ⚠️  Your .env is missing 2 variables from .env.example:
+
+  + SENTRY_DSN  (optional)
+  + ENABLE_CACHE  (has default: false)
+
+  Run `npx envcase check` to validate current values.
+
+# or when everything is present:
+[envcase] ✅ Your .env matches .env.example — nothing missing.
+```
+
+### Schema file requirements
+
+The CLI imports your schema file and looks for a named `schema` export. Export it alongside `env`:
+
+```ts
+// src/env.ts
+export const schema = {          // ← CLI reads this
+  PORT: z.coerce.number().default(3000),
+  DATABASE_URL: z.string().url(),
+}
+
+export const env = defineEnv(schema)  // ← app uses this
+```
+
+---
+
 ## Testing
 
 Pass a `source` object to isolate your tests from real environment variables:
 
 ```ts
 import { defineEnv } from 'envcase'
-import { env as appEnv } from '../src/env'
 
-// In your test setup:
 const testEnv = defineEnv(schema, {
   source: {
     DATABASE_URL: 'postgres://localhost/test',
@@ -298,35 +428,80 @@ const testEnv = defineEnv(schema, {
 })
 ```
 
+For adapter-specific testing, inject a plain object directly into the adapter:
+
+```ts
+import { viteAdapter, denoAdapter } from 'envcase/adapters'
+
+// Test viteAdapter without import.meta.env
+const viteResult = viteAdapter({ VITE_API_URL: 'https://api.example.com' })
+
+// Test denoAdapter without a Deno runtime
+const denoResult = denoAdapter({ PORT: '8000' })
+```
+
 ---
 
-## CLI *(coming in v0.3.0)*
+## Examples
 
-```bash
-# Generate a .env.example from your schema
-npx envcase generate
+| Example | Adapter | Notes |
+|---------|---------|-------|
+| [`examples/node-express`](../../examples/node-express) | `node` | Express app, `process.env` |
+| [`examples/vite-react`](../../examples/vite-react) | `vite` + `prefix: 'VITE_'` | React SPA |
+| [`examples/vue`](../../examples/vue) | `vite` + `prefix: 'VITE_'` | Vue 3 SPA |
+| [`examples/svelte`](../../examples/svelte) | `vite` + `prefix: 'VITE_'` | Svelte SPA |
+| [`examples/nextjs`](../../examples/nextjs) | `node` (server) + `prefix: 'NEXT_PUBLIC_'` (client) | App Router, split server/client env |
+| [`examples/vanilla-js`](../../examples/vanilla-js) | `node` | Plain JS, no bundler, `node --env-file=.env` |
 
-# Validate your .env without running the app
-npx envcase check
+### Node.js / Express
 
-# Show what's missing from .env vs .env.example
-npx envcase diff
+```ts
+// src/env.ts
+export const schema = {
+  DATABASE_URL: z.string().url(),
+  PORT: z.coerce.number().default(3000),
+  NODE_ENV: z.enum(['development', 'staging', 'production']),
+}
+export const env = defineEnv(schema)
+```
+
+### Vite (React / Vue / Svelte)
+
+```ts
+// src/env.ts — VITE_ prefix in .env, clean keys in code
+export const schema = {
+  API_URL: z.string().url(),
+  ENABLE_ANALYTICS: z.coerce.boolean().default(false),
+}
+export const env = defineEnv(schema, { adapter: 'vite', prefix: 'VITE_' })
+```
+
+### Next.js (App Router)
+
+```ts
+// src/env/server.ts — private, server-only
+export const schema = { DATABASE_URL: z.string().url(), API_SECRET: z.string().min(32) }
+export const serverEnv = defineEnv(schema)
+
+// src/env/client.ts — public, safe in browser
+export const schema = { APP_URL: z.string().url(), ENABLE_ANALYTICS: z.coerce.boolean().default(false) }
+export const clientEnv = defineEnv(schema, { prefix: 'NEXT_PUBLIC_' })
 ```
 
 ---
 
 ## Why envcase?
 
-| Package | Types | Zod-native | CLI tooling | Framework-agnostic |
-|---------|:-----:|:----------:|:-----------:|:-----------------:|
-| `dotenv` | ❌ | ❌ | ❌ | ✅ |
-| `t3-env` | ✅ | ✅ | ❌ | ❌ Next.js only |
-| `envsafe` | ✅ | ❌ custom | ❌ | ✅ |
-| `env-var` | ✅ | ❌ | ❌ | ✅ |
-| `envalid` | ✅ | ❌ | ❌ | ✅ |
-| **`envcase`** | ✅ | ✅ | ✅ *(v0.3)* | ✅ |
+| Package | Types | Zod-native | CLI tooling | Adapters | Framework-agnostic |
+|---------|:-----:|:----------:|:-----------:|:--------:|:-----------------:|
+| `dotenv` | ❌ | ❌ | ❌ | ❌ | ✅ |
+| `t3-env` | ✅ | ✅ | ❌ | ❌ | ❌ Next.js only |
+| `envsafe` | ✅ | ❌ custom | ❌ | ❌ | ✅ |
+| `env-var` | ✅ | ❌ | ❌ | ❌ | ✅ |
+| `envalid` | ✅ | ❌ | ❌ | ❌ | ✅ |
+| **`envcase`** | ✅ | ✅ | ✅ | ✅ Node/Vite/Deno | ✅ |
 
-**The unique combination:** Zod-native validation (use the validators you already know) + human-readable errors that tell you exactly what to fix + framework-agnostic design that works in Node.js, Vite, Deno, and edge runtimes.
+**The unique combination:** Zod-native validation · human-readable errors · runtime adapters for Node.js, Vite, and Deno · CLI tooling for team workflows.
 
 ---
 
