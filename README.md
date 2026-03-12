@@ -8,7 +8,7 @@ This monorepo contains the `envcase` package and its example apps.
 
 | Package | Version | Description |
 |---------|---------|-------------|
-| [`envcase`](./packages/envcase) | 0.1.0 | Core library — published to npm |
+| [`envcase`](./packages/envcase) | 0.1.4 | Core library — published to npm |
 
 Full documentation and API reference: [packages/envcase/README.md](./packages/envcase/README.md)
 

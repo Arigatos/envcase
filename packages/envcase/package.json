@@ -1,7 +1,7 @@
 {
   "name": "envcase",
-  "version": "0.1.3",
-  "description": "Type-safe, framework-agnostic environment variable validation with Zod",
+  "version": "0.1.4",
+  "description": "Validate and type your environment variables at startup using Zod. Works with Node.js, Vite, and Deno. Throws clear, human-readable errors when variables are missing or invalid — before your app ever runs.",
   "license": "MIT",
   "author": "Vasilis <vasilissavv@gmail.com>",
   "repository": {
