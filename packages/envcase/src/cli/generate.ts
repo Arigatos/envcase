@@ -41,6 +41,36 @@ function getEnumValues(def: Record<string, unknown>): string[] {
   return []
 }
 
+/**
+ * Detects whether a string schema has a URL validation, compatible with v3 and v4.
+ * v3: def.checks contains { kind: 'url' }
+ * v4 (z.string().url()): def.checks contains { _zod: { def: { check: 'string_format', format: 'url' } } }
+ * v4 (z.url()): schema itself has _zod.def.format === 'url'
+ */
+function isUrlString(validator: z.ZodTypeAny, def: Record<string, unknown>): boolean {
+  const checks = (def['checks'] as Array<Record<string, unknown>>) ?? []
+
+  // v3: { kind: 'url' }
+  if (checks.some((c) => c['kind'] === 'url')) return true
+
+  // v4 z.string().url(): { _zod: { def: { check: 'string_format', format: 'url' } } }
+  if (
+    checks.some((c) => {
+      const zodDef = (c['_zod'] as Record<string, unknown> | undefined)?.['def'] as
+        | Record<string, unknown>
+        | undefined
+      return zodDef?.['check'] === 'string_format' && zodDef?.['format'] === 'url'
+    })
+  )
+    return true
+
+  // v4 z.url(): the schema itself carries _zod.def.format === 'url'
+  const schemaDef = (
+    (validator as unknown as Record<string, unknown>)['_zod'] as Record<string, unknown> | undefined
+  )?.['def'] as Record<string, unknown> | undefined
+  return schemaDef?.['format'] === 'url'
+}
+
 function inspectSchema(validator: z.ZodTypeAny): SchemaInfo {
   const def = validator._def as Record<string, unknown>
   const typeName = getZodTypeName(def)
@@ -71,9 +101,7 @@ function inspectSchema(validator: z.ZodTypeAny): SchemaInfo {
 
   // v3: "ZodString", v4: "string"
   if (typeName === 'ZodString' || typeName === 'string') {
-    const checks = (def['checks'] as Array<{ kind: string }>) ?? []
-    const isUrl = checks.some((c) => c.kind === 'url')
-    return { ...base, baseType: 'string', isUrl, enumValues: [] }
+    return { ...base, baseType: 'string', isUrl: isUrlString(validator, def), enumValues: [] }
   }
 
   // v3: "ZodNumber", v4: "number"
