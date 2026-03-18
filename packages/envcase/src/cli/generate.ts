@@ -12,28 +12,53 @@ interface SchemaInfo {
   defaultValue: unknown
 }
 
+/**
+ * Returns the type identifier for a Zod schema def, compatible with v3 and v4.
+ * v3: def.typeName (e.g. "ZodBoolean"), v4: def.type (e.g. "boolean")
+ */
+function getZodTypeName(def: Record<string, unknown>): string {
+  return (def['type'] ?? def['typeName']) as string
+}
+
+/**
+ * Reads the default value from a ZodDefault def, compatible with v3 and v4.
+ * v3: def.defaultValue is a function — must be called.
+ * v4: def.defaultValue is the direct value — must NOT be called.
+ */
+function getDefaultValue(def: Record<string, unknown>): unknown {
+  const raw = def['defaultValue']
+  return typeof raw === 'function' ? raw() : raw
+}
+
+/**
+ * Reads enum values from a ZodEnum def, compatible with v3 and v4.
+ * v3: def.values is an array.
+ * v4: def.entries is an object — use Object.values().
+ */
+function getEnumValues(def: Record<string, unknown>): string[] {
+  if (Array.isArray(def['values'])) return def['values'] as string[]
+  if (def['entries']) return Object.values(def['entries'] as Record<string, string>)
+  return []
+}
+
 function inspectSchema(validator: z.ZodTypeAny): SchemaInfo {
   const def = validator._def as Record<string, unknown>
-  const typeName = def['typeName'] as string
+  const typeName = getZodTypeName(def)
 
-  // Unwrap ZodDefault
-  if (typeName === z.ZodFirstPartyTypeKind.ZodDefault) {
+  // Unwrap ZodDefault — v3: "ZodDefault", v4: "default"
+  if (typeName === 'ZodDefault' || typeName === 'default') {
     const inner = inspectSchema(def['innerType'] as z.ZodTypeAny)
-    return {
-      ...inner,
-      hasDefault: true,
-      defaultValue: (def['defaultValue'] as () => unknown)(),
-    }
+    return { ...inner, hasDefault: true, defaultValue: getDefaultValue(def) }
   }
 
-  // Unwrap ZodOptional
-  if (typeName === z.ZodFirstPartyTypeKind.ZodOptional) {
+  // Unwrap ZodOptional — v3: "ZodOptional", v4: "optional"
+  if (typeName === 'ZodOptional' || typeName === 'optional') {
     const inner = inspectSchema(def['innerType'] as z.ZodTypeAny)
     return { ...inner, isOptional: true }
   }
 
-  // Unwrap ZodNullable
-  if (typeName === z.ZodFirstPartyTypeKind.ZodNullable) {
+  // Unwrap ZodNullable — v3: "ZodNullable", v4: "nullable"
+  if (typeName === 'ZodNullable' || typeName === 'nullable') {
     const inner = inspectSchema(def['innerType'] as z.ZodTypeAny)
     return { ...inner, isOptional: true }
   }
@@ -44,23 +69,26 @@ function inspectSchema(validator: z.ZodTypeAny): SchemaInfo {
     defaultValue: undefined,
   }
 
-  if (typeName === z.ZodFirstPartyTypeKind.ZodString) {
+  // v3: "ZodString", v4: "string"
+  if (typeName === 'ZodString' || typeName === 'string') {
     const checks = (def['checks'] as Array<{ kind: string }>) ?? []
     const isUrl = checks.some((c) => c.kind === 'url')
     return { ...base, baseType: 'string', isUrl, enumValues: [] }
   }
 
-  if (typeName === z.ZodFirstPartyTypeKind.ZodNumber) {
+  // v3: "ZodNumber", v4: "number"
+  if (typeName === 'ZodNumber' || typeName === 'number') {
     return { ...base, baseType: 'number', isUrl: false, enumValues: [] }
   }
 
-  if (typeName === z.ZodFirstPartyTypeKind.ZodBoolean) {
+  // v3: "ZodBoolean", v4: "boolean"
+  if (typeName === 'ZodBoolean' || typeName === 'boolean') {
     return { ...base, baseType: 'boolean', isUrl: false, enumValues: [] }
   }
 
-  if (typeName === z.ZodFirstPartyTypeKind.ZodEnum) {
-    const values = (def['values'] as string[]) ?? []
-    return { ...base, baseType: 'enum', isUrl: false, enumValues: values }
+  // v3: "ZodEnum" with def.values, v4: "enum" with def.entries
+  if (typeName === 'ZodEnum' || typeName === 'enum') {
+    return { ...base, baseType: 'enum', isUrl: false, enumValues: getEnumValues(def) }
   }
 
   return { ...base, baseType: 'unknown', isUrl: false, enumValues: [] }

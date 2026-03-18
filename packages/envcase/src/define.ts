@@ -5,13 +5,23 @@ import { viteAdapter, viteEnvIfAvailable } from './adapters/vite.js'
 import { denoAdapter } from './adapters/deno.js'
 
 /**
+ * Returns the type identifier for a Zod schema, compatible with both v3 and v4.
+ * v3: _def.typeName (e.g. "ZodBoolean"), v4: _def.type (e.g. "boolean")
+ */
+function getZodTypeName(def: Record<string, unknown>): string {
+  return (def['type'] ?? def['typeName']) as string
+}
+
+/**
  * Detect whether a Zod type (including wrapped types like Default/Optional)
  * will coerce a value to boolean, so we can preprocess "false"/"0" correctly.
  * Zod's Boolean() coercion treats any non-empty string as true.
  */
 function isCoerceBoolean(validator: z.ZodTypeAny): boolean {
   const def = validator._def as Record<string, unknown>
-  if (def['typeName'] === z.ZodFirstPartyTypeKind.ZodBoolean && def['coerce'] === true) {
+  const typeName = getZodTypeName(def)
+  // v3: "ZodBoolean", v4: "boolean"
+  if ((typeName === 'ZodBoolean' || typeName === 'boolean') && def['coerce'] === true) {
     return true
   }
   // Unwrap ZodDefault / ZodOptional / ZodNullable
@@ -67,8 +77,13 @@ function humanizeZodIssue(issue: z.ZodIssue): string {
  */
 function extractEnvHint(validator: z.ZodTypeAny): string | undefined {
   const def = validator._def as Record<string, unknown>
-  if (def['typeName'] === z.ZodFirstPartyTypeKind.ZodEnum) {
-    return (def['values'] as string[]).join('|')
+  const typeName = getZodTypeName(def)
+  // v3: "ZodEnum" with def.values (array), v4: "enum" with def.entries (object)
+  if (typeName === 'ZodEnum' || typeName === 'enum') {
+    const values = Array.isArray(def['values'])
+      ? (def['values'] as string[])
+      : Object.values(def['entries'] as Record<string, string>)
+    return values.join('|')
   }
   const inner = (def['innerType'] ?? def['schema']) as z.ZodTypeAny | undefined
   return inner != null ? extractEnvHint(inner) : undefined

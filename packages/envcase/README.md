@@ -44,14 +44,14 @@ If any variable is missing or invalid, `envcase` throws a clear error **at start
 ## Install
 
 ```bash
-npm install envcase zod@3
+npm install envcase zod
 # or
-pnpm add envcase zod@3
+pnpm add envcase zod
 # or
-yarn add envcase zod@3
+yarn add envcase zod
 ```
 
-> Zod is a peer dependency. You control the version. **Requires Zod v3** (`zod@3`) — Zod v4 support is planned for a future release.
+> Zod is a peer dependency. You control the version. Compatible with Zod v3 and v4.
 
 ---
 

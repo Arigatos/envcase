@@ -1,6 +1,6 @@
 {
   "name": "envcase",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "Validate and type your environment variables at startup using Zod. Works with Node.js, Vite, and Deno. Throws clear, human-readable errors when variables are missing or invalid — before your app ever runs.",
   "license": "MIT",
   "author": "Vasilis <vasilissavv@gmail.com>",
@@ -53,7 +53,7 @@
     "lint": "eslint src --ext .ts"
   },
   "peerDependencies": {
-    "zod": ">=3.0.0 <4.0.0"
+    "zod": ">=3.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
